@@ -29,7 +29,8 @@ export function checkGeofenceBreach(
 ): BreachEvent[] {
   const events: BreachEvent[] = [];
 
-  for (const g of geofences) {
+ for (const g of geofences) {
+    if (!g.center || typeof g.radius !== 'number') continue;
     const insideNow = haversine(current, g.center) <= g.radius;
     const insideThen = previous ? haversine(previous, g.center) <= g.radius : insideNow;
 
