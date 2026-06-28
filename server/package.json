@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "tsc && echo '--- dist contents:' && ls -R dist",
+    "start": "echo '--- attempting to start' && ls dist && node dist/server/src/index.js",
     "seed": "tsx src/utils/seed.ts",
     "lint": "tsc --noEmit"
   },
