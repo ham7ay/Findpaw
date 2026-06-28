@@ -1,3 +1,6 @@
+console.log('🚀 Server starting up...');
+console.log('PORT env:', process.env.PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';
