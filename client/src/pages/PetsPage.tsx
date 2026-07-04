@@ -150,6 +150,7 @@ function PetFormModal({ pet, onSave, onClose }: { pet: Pet | null; onSave: (p: P
       color: color || undefined,
       imageUrl: pet?.imageUrl,
       createdAt: pet?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
     });
   };
 

@@ -79,6 +79,7 @@ export default function DeviceSimulatorPage() {
         id: `sim-${now}`,
         deviceId: 'simulator-001',
         petId: 'sim-pet',
+        ownerId: 'demo-user',
         lat: s.lat,
         lng: s.lng,
         accuracy: 5 + Math.random() * 8,
