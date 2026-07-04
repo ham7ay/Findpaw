@@ -1,10 +1,18 @@
 import { Bell, Search, Menu, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-export default function Topbar() {
+interface TopbarProps {
+  onMenuClick?: () => void;
+}
+
+export default function Topbar({ onMenuClick }: TopbarProps) {
   return (
     <header className="sticky top-0 z-30 flex items-center gap-4 px-4 lg:px-8 h-16 border-b border-white/5 bg-navy-950/70 backdrop-blur-xl">
-      <button className="lg:hidden p-2 rounded-lg text-white/60 hover:text-white">
+      <button
+        onClick={onMenuClick}
+        className="lg:hidden p-2 rounded-lg text-white/60 hover:text-white"
+        aria-label="Open menu"
+      >
         <Menu className="w-5 h-5" />
       </button>
 
