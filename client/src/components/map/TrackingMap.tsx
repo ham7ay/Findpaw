@@ -6,6 +6,7 @@ import {
   CircleMarker,
   Circle,
   useMap,
+  useMapEvents,
   Marker,
 } from 'react-leaflet';
 import L from 'leaflet';
@@ -53,6 +54,8 @@ interface TrackingMapProps {
   height?: string | number;
   center?: [number, number];
   zoom?: number;
+  /** Fired with { lat, lng } when the map is clicked — used to drop a new geofence center. */
+  onMapClick?: (pos: { lat: number; lng: number }) => void;
 }
 
 export default function TrackingMap({
@@ -64,6 +67,7 @@ export default function TrackingMap({
   height = '100%',
   center: centerProp,
   zoom = 16,
+  onMapClick,
 }: TrackingMapProps) {
   const current = history[history.length - 1];
 
@@ -171,6 +175,7 @@ export default function TrackingMap({
       )}
 
       {followLive && current && <FollowLive lat={current.lat} lng={current.lng} />}
+      {onMapClick && <ClickCapture onClick={onMapClick} />}
     </MapContainer>
   );
 }
@@ -180,5 +185,14 @@ function FollowLive({ lat, lng }: { lat: number; lng: number }) {
   useEffect(() => {
     map.panTo([lat, lng], { animate: true, duration: 1 });
   }, [lat, lng, map]);
+  return null;
+}
+
+function ClickCapture({ onClick }: { onClick: (pos: { lat: number; lng: number }) => void }) {
+  useMapEvents({
+    click(e) {
+      onClick({ lat: e.latlng.lat, lng: e.latlng.lng });
+    },
+  });
   return null;
 }

@@ -13,7 +13,7 @@ import LiveTrackingPage from './pages/LiveTrackingPage';
 import AlertsPage from './pages/AlertsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AdminPage from './pages/AdminPage';
-import DeviceSimulatorPage from './pages/DeviceSimulatorPage';
+import GeofencingPage from './pages/GeofencingPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import DashboardLayout from './components/layout/DashboardLayout';
@@ -49,7 +49,7 @@ export default function App() {
           <Route path="/tracking/:petId" element={<LiveTrackingPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/simulator" element={<DeviceSimulatorPage />} />
+          <Route path="/geofencing" element={<GeofencingPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Route>
       </Route>

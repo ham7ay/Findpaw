@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { TrendingUp, Activity, Clock, Compass } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
@@ -40,7 +40,7 @@ export default function AnalyticsPage() {
       return {
         date: days <= 7 ? labels[d.getDay()] : `${d.getMonth() + 1}/${d.getDate()}`,
         distance: Math.round((rand() * 8 + 2) * 10) / 10,
-        activeMinutes: Math.round(rand() * 180 + 60),
+        activeMinutes: Math.round(rand() * 180 + 60), // still used by the "Active time" summary card
         avgSpeed: Math.round((rand() * 3 + 1) * 10) / 10,
         topSpeed: Math.round((rand() * 6 + 3) * 10) / 10,
       };
@@ -61,21 +61,12 @@ export default function AnalyticsPage() {
       { zone: 'Unknown', visits: Math.round(rand() * 5) },
     ];
 
-    const behavior = [
-      { trait: 'Activity', value: Math.round(rand() * 40 + 50) },
-      { trait: 'Exploration', value: Math.round(rand() * 40 + 40) },
-      { trait: 'Sociability', value: Math.round(rand() * 40 + 50) },
-      { trait: 'Rest', value: Math.round(rand() * 30 + 60) },
-      { trait: 'Stamina', value: Math.round(rand() * 40 + 50) },
-      { trait: 'Curiosity', value: Math.round(rand() * 40 + 50) },
-    ];
-
     const totalDistance = daily.reduce((s, d) => s + d.distance, 0);
     const totalActive = daily.reduce((s, d) => s + d.activeMinutes, 0);
     const avgSpeed = daily.reduce((s, d) => s + d.avgSpeed, 0) / daily.length;
     const peakSpeed = Math.max(...daily.map((d) => d.topSpeed));
 
-    return { daily, hourly, zones, behavior, totalDistance, totalActive, avgSpeed, peakSpeed };
+    return { daily, hourly, zones, totalDistance, totalActive, avgSpeed, peakSpeed };
   }, [selectedPetId, timeRange]);
 
   const tooltipStyle = {
@@ -148,19 +139,6 @@ export default function AnalyticsPage() {
         </Card>
 
         <Card variant="holo" className="p-5">
-          <div className="font-display text-sm mb-4">Active minutes per day</div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data.daily}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="activeMinutes" fill={COLORS.purple} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        <Card variant="holo" className="p-5">
           <div className="font-display text-sm mb-4">Hourly activity pattern (24h)</div>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data.hourly}>
@@ -173,7 +151,7 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </Card>
 
-        <Card variant="holo" className="p-5">
+        <Card variant="holo" className="p-5 lg:col-span-2">
           <div className="font-display text-sm mb-4">Zone visits</div>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.zones} layout="vertical">
@@ -183,19 +161,6 @@ export default function AnalyticsPage() {
               <Tooltip contentStyle={tooltipStyle} />
               <Bar dataKey="visits" fill={COLORS.pink} radius={[0, 4, 4, 0]} />
             </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        <Card variant="holo" className="p-5 lg:col-span-2">
-          <div className="font-display text-sm mb-4">Behavioral fingerprint</div>
-          <ResponsiveContainer width="100%" height={300}>
-            <RadarChart data={data.behavior}>
-              <PolarGrid stroke="rgba(255,255,255,0.1)" />
-              <PolarAngleAxis dataKey="trait" stroke="rgba(255,255,255,0.6)" fontSize={11} />
-              <PolarRadiusAxis stroke="rgba(255,255,255,0.2)" fontSize={10} />
-              <Radar name="Score" dataKey="value" stroke={COLORS.cyan} fill={COLORS.cyan} fillOpacity={0.3} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </RadarChart>
           </ResponsiveContainer>
         </Card>
       </div>

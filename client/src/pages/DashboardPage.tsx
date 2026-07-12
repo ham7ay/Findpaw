@@ -9,6 +9,30 @@ import { DEMO_PETS, DEMO_DEVICES, DEMO_ALERTS, generateGpsHistory } from '@/serv
 import { predictTrajectory } from '@/services/aiPredictor';
 import { formatDistance, timeAgo } from '@/lib/utils';
 
+// Turns raw speed/risk numbers into a human-readable behavior label.
+function describeBehavior(avgSpeed: number, riskLevel: string): string {
+  if (riskLevel === 'high') return 'Erratic Movement';
+  if (avgSpeed < 0.3) return 'Stationary';
+  if (avgSpeed < 1.5) return 'Walking Normally';
+  if (avgSpeed < 3) return 'Active / Playing';
+  return 'Running';
+}
+
+// Naive "nearest known zone" guess — swap for real geofence lookup once
+// the Geofencing page's zones are wired into shared state / the API.
+function describeDestination(
+  next: { lat: number; lng: number },
+  home: { lat: number; lng: number }
+): string {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(next.lat - home.lat);
+  const dLng = toRad(next.lng - home.lng);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(home.lat)) * Math.cos(toRad(next.lat)) * Math.sin(dLng / 2) ** 2;
+  const dist = 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return dist < 150 ? 'Home' : 'Unknown area';
+}
+
 export default function DashboardPage() {
   const luna = DEMO_PETS[0];
   const lunaDevice = DEMO_DEVICES.find((d) => d.petId === luna.id)!;
@@ -51,9 +75,9 @@ export default function DashboardPage() {
       {/* Stat grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={<PawPrint className="w-5 h-5" />} label="Tracked Pets" value={DEMO_PETS.length} delta="+1 this month" accent="cyan" />
-        <StatCard icon={<Radio className="w-5 h-5" />} label="Active Devices" value={DEMO_DEVICES.filter((d) => d.status === 'online').length} delta="All online" accent="green" />
-        <StatCard icon={<BellRing className="w-5 h-5" />} label="Open Alerts" value={DEMO_ALERTS.filter((a) => !a.read).length} delta="2 today" accent="amber" />
-        <StatCard icon={<Brain className="w-5 h-5" />} label="AI Predictions" value="24/7" delta={`${Math.round(prediction.confidence * 100)}% confidence`} accent="purple" />
+        <StatCard icon={<Radio className="w-5 h-5" />} label="GPS Tags Online" value={DEMO_DEVICES.filter((d) => d.status === 'online').length} delta="All online" accent="green" />
+        <StatCard icon={<BellRing className="w-5 h-5" />} label="Active Alerts" value={DEMO_ALERTS.filter((a) => !a.read).length} delta="2 today" accent="amber" />
+        <StatCard icon={<Brain className="w-5 h-5" />} label="AI Prediction Accuracy" value={`${Math.round(prediction.confidence * 100)}%`} delta="Model: hybrid" accent="purple" />
       </div>
 
       {/* Live tracking preview + side panel */}
@@ -91,11 +115,11 @@ export default function DashboardPage() {
           <Card variant="holo" className="p-5">
             <div className="flex items-center gap-2 mb-3">
               <Brain className="w-4 h-4 text-neon-purple" />
-              <div className="font-display text-sm">AI Insight</div>
+              <div className="font-display text-sm">AI Behavior Analysis</div>
             </div>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-white/60">Risk level</span>
+                <span className="text-white/60">Risk</span>
                 <span className={`badge ${
                   prediction.riskLevel === 'safe' ? 'badge-green' :
                   prediction.riskLevel === 'low' ? 'badge-cyan' :
@@ -105,16 +129,20 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="flex justify-between">
+                <span className="text-white/60">Behavior</span>
+                <span className="text-white font-mono">{describeBehavior(prediction.avgSpeed, prediction.riskLevel)}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-white/60">Confidence</span>
                 <span className="text-white font-mono">{Math.round(prediction.confidence * 100)}%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-white/60">Avg. speed</span>
-                <span className="text-white font-mono">{prediction.avgSpeed.toFixed(1)} m/s</span>
+                <span className="text-white/60">Predicted Destination</span>
+                <span className="text-white font-mono">{describeDestination(prediction.nextPosition, history[0])}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-white/60">Heading</span>
-                <span className="text-white font-mono">{Math.round(prediction.bearing)}°</span>
+                <span className="text-white/60">Next Prediction</span>
+                <span className="text-white font-mono">{Math.round((prediction.nextPosition.tOffsetSec ?? 60) / 60) || 1} min</span>
               </div>
               {prediction.anomalies.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-white/10">

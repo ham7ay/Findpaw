@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Brain, Sliders, RefreshCw, AlertTriangle, TrendingUp, MapPin, Activity, ChevronDown } from 'lucide-react';
+import { Brain, RefreshCw, AlertTriangle, TrendingUp, MapPin, Activity, ChevronDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import TrackingMap from '@/components/map/TrackingMap';
@@ -217,6 +217,11 @@ export default function LiveTrackingPage() {
               <div className="font-display text-sm">Live Metrics</div>
             </div>
             <div className="space-y-3 text-sm">
+              <div className="pb-3 mb-1 border-b border-white/10 space-y-1.5">
+                <div className="text-xs text-white/50 mb-2">Current Position</div>
+                <Metric label="Latitude" value={last.lat.toFixed(5)} />
+                <Metric label="Longitude" value={last.lng.toFixed(5)} />
+              </div>
               <Metric label="Risk" value={prediction.riskLevel.toUpperCase()} accent={
                 prediction.riskLevel === 'safe' ? 'green' :
                 prediction.riskLevel === 'low' ? 'cyan' :

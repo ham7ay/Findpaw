@@ -3,7 +3,7 @@
 // stay consistent.
 
 import { getIdToken } from '../lib/firebase';
-import type { ApiResponse } from '@shared/types';
+import type { ApiResponse, Geofence } from '@shared/types';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -41,3 +41,14 @@ export const api = {
 };
 
 export { ApiError };
+
+// Thin wrapper around the existing server/src/routes/geofences.ts endpoints.
+// Not used while the app runs in demo mode (see GeofencingPage), but ready
+// to swap in once pets/devices are backed by the real API.
+export const geofenceApi = {
+  list: () => api.get<Geofence[]>('/api/geofences'),
+  create: (body: Omit<Geofence, 'id' | 'ownerId' | 'createdAt'>) => api.post<Geofence>('/api/geofences', body),
+  update: (id: string, body: Partial<Omit<Geofence, 'id' | 'ownerId' | 'createdAt'>>) =>
+    api.put<Geofence>(`/api/geofences/${id}`, body),
+  remove: (id: string) => api.del<{ id: string }>(`/api/geofences/${id}`),
+};

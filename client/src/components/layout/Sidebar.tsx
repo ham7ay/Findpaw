@@ -5,7 +5,7 @@ import {
   Map as MapIcon,
   Bell,
   BarChart3,
-  Cpu,
+  MapPinned,
   Shield,
   LogOut,
   X,
@@ -22,7 +22,7 @@ const navItems = [
   { to: '/tracking',   label: 'Live Tracking', icon: MapIcon },
   { to: '/alerts',     label: 'Alerts',        icon: Bell },
   { to: '/analytics',  label: 'Analytics',     icon: BarChart3 },
-  { to: '/simulator',  label: 'GPS Simulator', icon: Cpu },
+  { to: '/geofencing', label: 'Geofencing',    icon: MapPinned },
   { to: '/admin',      label: 'Admin',         icon: Shield },
 ];
 
