@@ -3,9 +3,9 @@
 // stay consistent.
 
 import { getIdToken } from '../lib/firebase';
-import type { ApiResponse, Geofence } from '@shared/types';
+import type { ApiResponse, Geofence, Pet, Device } from '@shared/types';
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -51,4 +51,23 @@ export const geofenceApi = {
   update: (id: string, body: Partial<Omit<Geofence, 'id' | 'ownerId' | 'createdAt'>>) =>
     api.put<Geofence>(`/api/geofences/${id}`, body),
   remove: (id: string) => api.del<{ id: string }>(`/api/geofences/${id}`),
+};
+
+export const petApi = {
+  list: () => api.get<Pet[]>('/api/pets'),
+  create: (body: Omit<Pet, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => api.post<Pet>('/api/pets', body),
+  update: (id: string, body: Partial<Omit<Pet, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>>) =>
+    api.put<Pet>(`/api/pets/${id}`, body),
+  remove: (id: string) => api.del<{ id: string }>(`/api/pets/${id}`),
+};
+
+// Device registration is user-authenticated (via `api`), but the resulting
+// rawKey + device id are then used for *device*-authenticated GPS uploads
+// (X-Device-Id / X-Device-Key headers) — see TrackerSetupPage.tsx.
+export const deviceApi = {
+  list: () => api.get<Device[]>('/api/devices'),
+  create: (body: { serial: string; petId?: string; firmware?: string }) =>
+    api.post<Device & { rawKey: string }>('/api/devices', body),
+  rotateKey: (id: string) => api.post<{ rawKey: string }>(`/api/devices/${id}/rotate-key`),
+  remove: (id: string) => api.del<{ id: string }>(`/api/devices/${id}`),
 };

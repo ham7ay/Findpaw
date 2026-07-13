@@ -14,6 +14,7 @@ import AlertsPage from './pages/AlertsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AdminPage from './pages/AdminPage';
 import GeofencingPage from './pages/GeofencingPage';
+import TrackerSetupPage from './pages/TrackerSetupPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import DashboardLayout from './components/layout/DashboardLayout';
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/geofencing" element={<GeofencingPage />} />
+          <Route path="/tracker-setup" element={<TrackerSetupPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Route>
       </Route>
