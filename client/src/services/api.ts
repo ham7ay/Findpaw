@@ -3,7 +3,7 @@
 // stay consistent.
 
 import { getIdToken } from '../lib/firebase';
-import type { ApiResponse, Geofence, Pet, Device } from '@shared/types';
+import type { ApiResponse, Geofence, Pet, Device, GpsLog, Alert } from '@shared/types';
 
 export const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -43,14 +43,55 @@ export const api = {
 export { ApiError };
 
 // Thin wrapper around the existing server/src/routes/geofences.ts endpoints.
-// Not used while the app runs in demo mode (see GeofencingPage), but ready
-// to swap in once pets/devices are backed by the real API.
+interface GeofenceInput {
+  name: string;
+  petId: string;
+  center: { lat: number; lng: number };
+  radius: number;
+  isSafeZone?: boolean;
+  active?: boolean;
+}
+
 export const geofenceApi = {
-  list: () => api.get<Geofence[]>('/api/geofences'),
-  create: (body: Omit<Geofence, 'id' | 'ownerId' | 'createdAt'>) => api.post<Geofence>('/api/geofences', body),
-  update: (id: string, body: Partial<Omit<Geofence, 'id' | 'ownerId' | 'createdAt'>>) =>
-    api.put<Geofence>(`/api/geofences/${id}`, body),
+  list: (petId?: string) => api.get<Geofence[]>(`/api/geofences${petId ? `?petId=${petId}` : ''}`),
+  create: (body: GeofenceInput) => api.post<Geofence>('/api/geofences', body),
+  update: (id: string, body: Partial<GeofenceInput>) => api.put<Geofence>(`/api/geofences/${id}`, body),
   remove: (id: string) => api.del<{ id: string }>(`/api/geofences/${id}`),
+};
+
+export const alertApi = {
+  list: (opts?: { unreadOnly?: boolean; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.unreadOnly) params.set('unread', 'true');
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return api.get<Alert[]>(`/api/alerts${qs ? `?${qs}` : ''}`);
+  },
+  markRead: (id: string) => api.post<{ success: true }>(`/api/alerts/${id}/read`),
+  markAllRead: () => api.post<{ updated: number }>('/api/alerts/read-all'),
+  remove: (id: string) => api.del<{ id: string }>(`/api/alerts/${id}`),
+};
+
+export const gpsApi = {
+  history: (petId: string, opts?: { limit?: number; since?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.since) params.set('since', String(opts.since));
+    const qs = params.toString();
+    return api.get<GpsLog[]>(`/api/gps/${petId}${qs ? `?${qs}` : ''}`);
+  },
+};
+
+export const authApi = {
+  me: () => api.get<{ uid: string; email: string; role: 'user' | 'admin'; displayName: string; createdAt: number }>('/api/auth/me'),
+  setRole: (uid: string, role: 'user' | 'admin') => api.post<{ success: true }>('/api/auth/role', { uid, role }),
+};
+
+export const adminApi = {
+  users: () => api.get<{ uid: string; email: string; role: 'user' | 'admin'; displayName: string; createdAt: number }[]>('/api/admin/users'),
+  devices: () => api.get<Device[]>('/api/admin/devices'),
+  stats: () => api.get<{ users: number; pets: number; devices: number; alerts: number; gpsLogs: number; predictions: number }>('/api/admin/stats'),
+  deleteUser: (uid: string) => api.del<{ success: true }>(`/api/admin/users/${uid}`),
 };
 
 export const petApi = {

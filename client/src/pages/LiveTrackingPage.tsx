@@ -1,47 +1,90 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Brain, RefreshCw, AlertTriangle, TrendingUp, MapPin, Activity, ChevronDown } from 'lucide-react';
+import { Brain, RefreshCw, AlertTriangle, TrendingUp, MapPin, Activity, ChevronDown, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import TrackingMap from '@/components/map/TrackingMap';
-import { DEMO_PETS, generateGpsHistory } from '@/services/demoData';
+import { petApi, gpsApi } from '@/services/api';
+import { useGpsStream } from '@/services/socket';
 import { predictTrajectory, type PredictionResult } from '@/services/aiPredictor';
 import { formatDistance, formatSpeed } from '@/lib/utils';
-import type { GpsLog } from '@shared/types';
+import type { GpsLog, Pet } from '@shared/types';
 
 export default function LiveTrackingPage() {
   const { petId } = useParams<{ petId: string }>();
   const navigate = useNavigate();
 
-  const initialPet = petId ? DEMO_PETS.find((p) => p.id === petId) : DEMO_PETS[0];
-  const [selectedPet, setSelectedPet] = useState(initialPet ?? DEMO_PETS[0]);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [loadingPets, setLoadingPets] = useState(true);
+  const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
+
+  const [history, setHistory] = useState<GpsLog[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
   const [horizon, setHorizon] = useState(10);
   const [stepSeconds, setStepSeconds] = useState(60);
   const [showHistory, setShowHistory] = useState(true);
   const [showPrediction, setShowPrediction] = useState(true);
   const [showConfidenceCone, setShowConfidenceCone] = useState(true);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [petMenuOpen, setPetMenuOpen] = useState(false);
 
+  // Load the pet list once, then pick the active pet (from URL or first pet)
   useEffect(() => {
-    if (petId && initialPet) setSelectedPet(initialPet);
-  }, [petId, initialPet]);
+    (async () => {
+      try {
+        const list = await petApi.list();
+        setPets(list);
+        const initial = petId ? list.find((p) => p.id === petId) : list[0];
+        setSelectedPet(initial ?? list[0] ?? null);
+      } catch {
+        // leave pets empty — UI shows "no pets" state
+      } finally {
+        setLoadingPets(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const history = useMemo<GpsLog[]>(
-    () => generateGpsHistory(selectedPet.id, `device-${selectedPet.id}`, 90 + refreshTick * 2),
-    [selectedPet.id, refreshTick]
-  );
+  useEffect(() => {
+    if (petId && pets.length) {
+      const match = pets.find((p) => p.id === petId);
+      if (match) setSelectedPet(match);
+    }
+  }, [petId, pets]);
 
-  const prediction = useMemo<PredictionResult>(
-    () =>
-      predictTrajectory({
-        points: history.map((p) => ({ lat: p.lat, lng: p.lng, timestamp: p.timestamp, speed: p.speed })),
-        horizonMinutes: horizon,
-        stepSeconds,
-      }),
-    [history, horizon, stepSeconds]
-  );
+  const loadHistory = async (pet: Pet) => {
+    setLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const data = await gpsApi.history(pet.id, { limit: 300 });
+      setHistory(data);
+    } catch (err: any) {
+      setHistoryError(err.message ?? 'Could not load GPS history');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPet) loadHistory(selectedPet);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPet?.id]);
+
+  // Live push updates — appends new fixes as your tracker sends them
+  useGpsStream(selectedPet?.id, (log) => {
+    setHistory((h) => [...h, log].slice(-500));
+  });
+
+  const prediction = useMemo<PredictionResult | null>(() => {
+    if (history.length < 2) return null;
+    return predictTrajectory({
+      points: history.map((p) => ({ lat: p.lat, lng: p.lng, timestamp: p.timestamp, speed: p.speed })),
+      horizonMinutes: horizon,
+      stepSeconds,
+    });
+  }, [history, horizon, stepSeconds]);
 
   const last = history[history.length - 1];
 
@@ -58,6 +101,24 @@ export default function LiveTrackingPage() {
       return acc + 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }, 0);
   }, [history]);
+
+  if (loadingPets) {
+    return (
+      <div className="flex items-center gap-2 text-white/50 text-sm py-20 justify-center">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  if (!selectedPet) {
+    return (
+      <Card variant="holo" className="p-10 text-center">
+        <MapPin className="w-10 h-10 text-white/20 mx-auto mb-3" />
+        <div className="text-white/60 mb-4">You don't have any pets yet.</div>
+        <Link to="/pets"><Button variant="primary">Add a pet</Button></Link>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -94,7 +155,7 @@ export default function LiveTrackingPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="absolute right-0 mt-2 w-56 rounded-lg bg-navy-900 border border-white/10 shadow-glow z-50 overflow-hidden"
               >
-                {DEMO_PETS.map((p) => (
+                {pets.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => {
@@ -117,170 +178,191 @@ export default function LiveTrackingPage() {
             )}
           </div>
 
-          <Button variant="secondary" size="sm" onClick={() => setRefreshTick((t) => t + 1)}>
-            <RefreshCw className="w-4 h-4 mr-1.5" />
+          <Button variant="secondary" size="sm" onClick={() => loadHistory(selectedPet)} disabled={loadingHistory}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loadingHistory ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
       </div>
 
+      {historyError && (
+        <Card variant="holo" className="p-4 border-neon-pink/40 text-sm text-neon-pink">{historyError}</Card>
+      )}
+
+      {!loadingHistory && history.length === 0 && !historyError && (
+        <Card variant="holo" className="p-6 text-sm text-white/60 flex items-center justify-between flex-wrap gap-3">
+          <span>No location data yet for {selectedPet.name}. Start tracking from the GPS Tracker page.</span>
+          <Link to="/tracker-setup"><Button size="sm">Set up tracker</Button></Link>
+        </Card>
+      )}
+
       {/* Main grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Map */}
-        <Card variant="holo" className="lg:col-span-3 p-0 overflow-hidden">
-          <div className="h-[600px] relative">
-            <TrackingMap
-              history={showHistory ? history : []}
-              prediction={showPrediction ? prediction : null}
-              center={[last.lat, last.lng]}
-              followLive
-              showConfidenceCone={showConfidenceCone}
-            />
-            {/* Legend overlay */}
-            <div className="absolute bottom-4 left-4 z-[400] glass rounded-lg p-3 text-xs space-y-1.5">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-0.5 bg-neon-cyan" />
-                <span className="text-white/70">Historical path</span>
+      {history.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Map */}
+          <Card variant="holo" className="lg:col-span-3 p-0 overflow-hidden">
+            <div className="h-[600px] relative">
+              <TrackingMap
+                history={showHistory ? history : []}
+                prediction={showPrediction ? prediction : null}
+                center={[last.lat, last.lng]}
+                followLive
+                showConfidenceCone={showConfidenceCone}
+              />
+              {/* Legend overlay */}
+              <div className="absolute bottom-4 left-4 z-[400] glass rounded-lg p-3 text-xs space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-0.5 bg-neon-cyan" />
+                  <span className="text-white/70">Historical path</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-0.5 border-t-2 border-dashed border-neon-purple" />
+                  <span className="text-white/70">AI prediction</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-neon-purple/20 border border-neon-purple/50" />
+                  <span className="text-white/70">Confidence cone</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-0.5 border-t-2 border-dashed border-neon-purple" />
-                <span className="text-white/70">AI prediction</span>
+            </div>
+          </Card>
+
+          {/* Side panel: AI controls + metrics */}
+          <div className="space-y-4">
+            <Card variant="holo" className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Brain className="w-4 h-4 text-neon-purple" />
+                <div className="font-display text-sm">AI Forecast</div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-neon-purple/20 border border-neon-purple/50" />
-                <span className="text-white/70">Confidence cone</span>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-white/60">Horizon</span>
+                    <span className="font-mono text-neon-cyan">{horizon} min</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={30}
+                    value={horizon}
+                    onChange={(e) => setHorizon(Number(e.target.value))}
+                    className="w-full accent-neon-cyan"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-white/60">Step interval</span>
+                    <span className="font-mono text-neon-cyan">{stepSeconds}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={15}
+                    max={120}
+                    step={15}
+                    value={stepSeconds}
+                    onChange={(e) => setStepSeconds(Number(e.target.value))}
+                    className="w-full accent-neon-cyan"
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-white/10 space-y-2 text-xs">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-white/60">Show history</span>
+                    <input type="checkbox" checked={showHistory} onChange={(e) => setShowHistory(e.target.checked)} className="accent-neon-cyan" />
+                  </label>
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-white/60">Show prediction</span>
+                    <input type="checkbox" checked={showPrediction} onChange={(e) => setShowPrediction(e.target.checked)} className="accent-neon-cyan" />
+                  </label>
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-white/60">Confidence cone</span>
+                    <input type="checkbox" checked={showConfidenceCone} onChange={(e) => setShowConfidenceCone(e.target.checked)} className="accent-neon-cyan" />
+                  </label>
+                </div>
               </div>
+            </Card>
+
+            <Card variant="holo" className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp className="w-4 h-4 text-neon-cyan" />
+                <div className="font-display text-sm">Live Metrics</div>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="pb-3 mb-1 border-b border-white/10 space-y-1.5">
+                  <div className="text-xs text-white/50 mb-2">Current Position</div>
+                  <Metric label="Latitude" value={last.lat.toFixed(5)} />
+                  <Metric label="Longitude" value={last.lng.toFixed(5)} />
+                </div>
+                {prediction ? (
+                  <>
+                    <Metric label="Risk" value={prediction.riskLevel.toUpperCase()} accent={
+                      prediction.riskLevel === 'safe' ? 'green' :
+                      prediction.riskLevel === 'low' ? 'cyan' :
+                      prediction.riskLevel === 'moderate' ? 'amber' : 'pink'
+                    } />
+                    <Metric label="Confidence" value={`${Math.round(prediction.confidence * 100)}%`} />
+                    <Metric label="Risk score" value={`${prediction.riskScore}/100`} />
+                    <Metric label="Avg. speed" value={formatSpeed(prediction.avgSpeed)} />
+                    <Metric label="Bearing" value={`${Math.round(prediction.bearing)}°`} />
+                  </>
+                ) : (
+                  <div className="text-xs text-white/40">Need at least 2 GPS points for AI forecasting.</div>
+                )}
+                <Metric label="Distance today" value={formatDistance(totalDistance)} />
+                <Metric label="History points" value={history.length} />
+                {prediction && <Metric label="Forecast points" value={prediction.points.length} />}
+              </div>
+            </Card>
+
+            {prediction && prediction.anomalies.length > 0 && (
+              <Card variant="holo" className="p-5 border-amber-400/30">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  <div className="font-display text-sm text-amber-200">Anomalies</div>
+                </div>
+                <ul className="space-y-2 text-xs text-white/70">
+                  {prediction.anomalies.map((a, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-amber-400">▸</span>
+                      <span>{a}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Timeline strip */}
+      {prediction && prediction.points.length > 0 && (
+        <Card variant="holo" className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-4 h-4 text-neon-cyan" />
+            <div className="font-display text-sm">Predicted trajectory timeline</div>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="flex gap-2 min-w-max pb-2">
+              {prediction.points.map((p, i) => (
+                <div
+                  key={i}
+                  className="flex-shrink-0 w-32 p-3 rounded-lg bg-white/[0.02] border border-white/5 hover:border-neon-purple/40 transition-colors"
+                >
+                  <div className="text-[10px] text-white/40 uppercase tracking-wider mb-1">t+{p.tOffsetSec}s</div>
+                  <div className="font-mono text-xs text-white/80">{p.lat.toFixed(5)}</div>
+                  <div className="font-mono text-xs text-white/80">{p.lng.toFixed(5)}</div>
+                  <div className="mt-1.5 flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-neon-purple" />
+                    <span className="text-[10px] text-neon-purple/80">{Math.round(p.confidence * 100)}%</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </Card>
-
-        {/* Side panel: AI controls + metrics */}
-        <div className="space-y-4">
-          <Card variant="holo" className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Brain className="w-4 h-4 text-neon-purple" />
-              <div className="font-display text-sm">AI Forecast</div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <span className="text-white/60">Horizon</span>
-                  <span className="font-mono text-neon-cyan">{horizon} min</span>
-                </div>
-                <input
-                  type="range"
-                  min={2}
-                  max={30}
-                  value={horizon}
-                  onChange={(e) => setHorizon(Number(e.target.value))}
-                  className="w-full accent-neon-cyan"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <span className="text-white/60">Step interval</span>
-                  <span className="font-mono text-neon-cyan">{stepSeconds}s</span>
-                </div>
-                <input
-                  type="range"
-                  min={15}
-                  max={120}
-                  step={15}
-                  value={stepSeconds}
-                  onChange={(e) => setStepSeconds(Number(e.target.value))}
-                  className="w-full accent-neon-cyan"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-white/10 space-y-2 text-xs">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-white/60">Show history</span>
-                  <input type="checkbox" checked={showHistory} onChange={(e) => setShowHistory(e.target.checked)} className="accent-neon-cyan" />
-                </label>
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-white/60">Show prediction</span>
-                  <input type="checkbox" checked={showPrediction} onChange={(e) => setShowPrediction(e.target.checked)} className="accent-neon-cyan" />
-                </label>
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-white/60">Confidence cone</span>
-                  <input type="checkbox" checked={showConfidenceCone} onChange={(e) => setShowConfidenceCone(e.target.checked)} className="accent-neon-cyan" />
-                </label>
-              </div>
-            </div>
-          </Card>
-
-          <Card variant="holo" className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-4 h-4 text-neon-cyan" />
-              <div className="font-display text-sm">Live Metrics</div>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="pb-3 mb-1 border-b border-white/10 space-y-1.5">
-                <div className="text-xs text-white/50 mb-2">Current Position</div>
-                <Metric label="Latitude" value={last.lat.toFixed(5)} />
-                <Metric label="Longitude" value={last.lng.toFixed(5)} />
-              </div>
-              <Metric label="Risk" value={prediction.riskLevel.toUpperCase()} accent={
-                prediction.riskLevel === 'safe' ? 'green' :
-                prediction.riskLevel === 'low' ? 'cyan' :
-                prediction.riskLevel === 'moderate' ? 'amber' : 'pink'
-              } />
-              <Metric label="Confidence" value={`${Math.round(prediction.confidence * 100)}%`} />
-              <Metric label="Risk score" value={`${prediction.riskScore}/100`} />
-              <Metric label="Avg. speed" value={formatSpeed(prediction.avgSpeed)} />
-              <Metric label="Bearing" value={`${Math.round(prediction.bearing)}°`} />
-              <Metric label="Distance today" value={formatDistance(totalDistance)} />
-              <Metric label="History points" value={history.length} />
-              <Metric label="Forecast points" value={prediction.points.length} />
-            </div>
-          </Card>
-
-          {prediction.anomalies.length > 0 && (
-            <Card variant="holo" className="p-5 border-amber-400/30">
-              <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                <div className="font-display text-sm text-amber-200">Anomalies</div>
-              </div>
-              <ul className="space-y-2 text-xs text-white/70">
-                {prediction.anomalies.map((a, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-amber-400">▸</span>
-                    <span>{a}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-        </div>
-      </div>
-
-      {/* Timeline strip */}
-      <Card variant="holo" className="p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <Activity className="w-4 h-4 text-neon-cyan" />
-          <div className="font-display text-sm">Predicted trajectory timeline</div>
-        </div>
-        <div className="overflow-x-auto">
-          <div className="flex gap-2 min-w-max pb-2">
-            {prediction.points.map((p, i) => (
-              <div
-                key={i}
-                className="flex-shrink-0 w-32 p-3 rounded-lg bg-white/[0.02] border border-white/5 hover:border-neon-purple/40 transition-colors"
-              >
-                <div className="text-[10px] text-white/40 uppercase tracking-wider mb-1">t+{p.tOffsetSec}s</div>
-                <div className="font-mono text-xs text-white/80">{p.lat.toFixed(5)}</div>
-                <div className="font-mono text-xs text-white/80">{p.lng.toFixed(5)}</div>
-                <div className="mt-1.5 flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-neon-purple" />
-                  <span className="text-[10px] text-neon-purple/80">{Math.round(p.confidence * 100)}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Card>
+      )}
     </div>
   );
 }

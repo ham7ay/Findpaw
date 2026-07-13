@@ -1,32 +1,87 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Radio, Shield, Search, MoreVertical, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Radio, Shield, Search, Trash2, ShieldAlert, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { DEMO_PETS, DEMO_DEVICES } from '@/services/demoData';
+import { adminApi, ApiError } from '@/services/api';
 import { timeAgo } from '@/lib/utils';
+import type { Device } from '@shared/types';
 
-const DEMO_USERS = [
-  { id: 'u-001', name: 'Ali Raza', email: 'ali@findpaw.io', role: 'admin', status: 'active', joined: Date.now() - 86400000 * 90, pets: 3 },
-  { id: 'u-002', name: 'Sara Khan', email: 'sara@findpaw.io', role: 'user', status: 'active', joined: Date.now() - 86400000 * 45, pets: 2 },
-  { id: 'u-003', name: 'Hassan Ahmed', email: 'hassan@findpaw.io', role: 'user', status: 'active', joined: Date.now() - 86400000 * 20, pets: 1 },
-  { id: 'u-004', name: 'Mariam Tariq', email: 'mariam@findpaw.io', role: 'user', status: 'suspended', joined: Date.now() - 86400000 * 60, pets: 0 },
-  { id: 'u-005', name: 'Bilal Sheikh', email: 'bilal@findpaw.io', role: 'user', status: 'active', joined: Date.now() - 86400000 * 10, pets: 4 },
-];
+interface AdminUser {
+  uid: string;
+  email: string;
+  role: 'user' | 'admin';
+  displayName: string;
+  createdAt: number;
+}
 
 export default function AdminPage() {
   const [tab, setTab] = useState<'users' | 'devices'>('users');
   const [search, setSearch] = useState('');
 
-  const filteredUsers = DEMO_USERS.filter(
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [stats, setStats] = useState<{ users: number; pets: number; devices: number; alerts: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [forbidden, setForbidden] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [u, d, s] = await Promise.all([adminApi.users(), adminApi.devices(), adminApi.stats()]);
+        setUsers(u);
+        setDevices(d);
+        setStats(s);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) setForbidden(true);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const removeUser = async (uid: string) => {
+    if (!confirm('Delete this user account? This cannot be undone.')) return;
+    const prev = users;
+    setUsers(users.filter((u) => u.uid !== uid));
+    try {
+      await adminApi.deleteUser(uid);
+    } catch (err: any) {
+      setUsers(prev);
+      alert(err.message ?? 'Could not delete user');
+    }
+  };
+
+  const filteredUsers = users.filter(
     (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
+      u.displayName?.toLowerCase().includes(search.toLowerCase()) ||
+      u.email?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredDevices = DEMO_DEVICES.filter((d) =>
+  const filteredDevices = devices.filter((d) =>
     d.serial.toLowerCase().includes(search.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-white/50 text-sm py-20 justify-center">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading admin console…
+      </div>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <Card variant="holo" className="p-10 text-center">
+        <ShieldAlert className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+        <div className="text-white/70 font-display mb-2">Admin access required</div>
+        <p className="text-white/50 text-sm max-w-md mx-auto">
+          Your account doesn't have the <code className="text-neon-cyan">admin</code> role yet. Set it via
+          Firebase custom claims (or ask an existing admin to promote you through <code className="text-neon-cyan">POST /api/auth/role</code>) to access this page.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -39,10 +94,10 @@ export default function AdminPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatBox icon={Users} label="Total users" value={DEMO_USERS.length} />
-        <StatBox icon={Users} label="Active" value={DEMO_USERS.filter((u) => u.status === 'active').length} accent="green" />
-        <StatBox icon={Radio} label="Devices" value={DEMO_DEVICES.length} />
-        <StatBox icon={Radio} label="Online" value={DEMO_DEVICES.filter((d) => d.status === 'online').length} accent="cyan" />
+        <StatBox icon={Users} label="Total users" value={stats?.users ?? users.length} />
+        <StatBox icon={Users} label="Admins" value={users.filter((u) => u.role === 'admin').length} accent="green" />
+        <StatBox icon={Radio} label="Devices" value={stats?.devices ?? devices.length} />
+        <StatBox icon={Radio} label="Online" value={devices.filter((d) => d.status === 'online').length} accent="cyan" />
       </div>
 
       <Card variant="holo" className="p-0 overflow-hidden">
@@ -68,8 +123,6 @@ export default function AdminPage() {
                   <tr className="border-b border-white/10 text-left text-xs text-white/50 uppercase tracking-wider">
                     <th className="pb-3 font-normal">User</th>
                     <th className="pb-3 font-normal">Role</th>
-                    <th className="pb-3 font-normal">Status</th>
-                    <th className="pb-3 font-normal">Pets</th>
                     <th className="pb-3 font-normal">Joined</th>
                     <th className="pb-3 font-normal"></th>
                   </tr>
@@ -77,7 +130,7 @@ export default function AdminPage() {
                 <tbody>
                   {filteredUsers.map((u, i) => (
                     <motion.tr
-                      key={u.id}
+                      key={u.uid}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: i * 0.03 }}
@@ -86,10 +139,10 @@ export default function AdminPage() {
                       <td className="py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-neon-cyan to-neon-purple flex items-center justify-center text-xs font-bold">
-                            {u.name.split(' ').map((n) => n[0]).join('')}
+                            {(u.displayName || u.email || '?').charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <div>{u.name}</div>
+                            <div>{u.displayName || '—'}</div>
                             <div className="text-xs text-white/40">{u.email}</div>
                           </div>
                         </div>
@@ -99,26 +152,21 @@ export default function AdminPage() {
                           {u.role}
                         </span>
                       </td>
-                      <td className="py-3">
-                        {u.status === 'active' ? (
-                          <span className="flex items-center gap-1.5 text-neon-green">
-                            <CheckCircle className="w-3.5 h-3.5" /> Active
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1.5 text-white/50">
-                            <XCircle className="w-3.5 h-3.5" /> Suspended
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 font-mono">{u.pets}</td>
-                      <td className="py-3 text-white/50">{timeAgo(u.joined)}</td>
+                      <td className="py-3 text-white/50">{u.createdAt ? timeAgo(u.createdAt) : '—'}</td>
                       <td className="py-3 text-right">
-                        <button className="p-1.5 rounded hover:bg-white/10 text-white/40 hover:text-white">
-                          <MoreVertical className="w-4 h-4" />
+                        <button
+                          onClick={() => removeUser(u.uid)}
+                          className="p-1.5 rounded hover:bg-white/10 text-white/40 hover:text-neon-pink"
+                          title="Delete user"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
                     </motion.tr>
                   ))}
+                  {filteredUsers.length === 0 && (
+                    <tr><td colSpan={4} className="py-8 text-center text-white/40">No users found.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -128,7 +176,7 @@ export default function AdminPage() {
                 <thead>
                   <tr className="border-b border-white/10 text-left text-xs text-white/50 uppercase tracking-wider">
                     <th className="pb-3 font-normal">Serial</th>
-                    <th className="pb-3 font-normal">Pet</th>
+                    <th className="pb-3 font-normal">Pet ID</th>
                     <th className="pb-3 font-normal">Firmware</th>
                     <th className="pb-3 font-normal">Status</th>
                     <th className="pb-3 font-normal">Battery</th>
@@ -136,46 +184,39 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredDevices.map((d, i) => {
-                    const pet = DEMO_PETS.find((p) => p.id === d.petId);
-                    return (
-                      <motion.tr
-                        key={d.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: i * 0.03 }}
-                        className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-                      >
-                        <td className="py-3 font-mono text-xs">{d.serial}</td>
-                        <td className="py-3">
-                          {pet ? (
-                            <span className="flex items-center gap-2">
-                              <span>{pet.species === 'dog' ? '🐕' : '🐈'}</span>
-                              {pet.name}
-                            </span>
-                          ) : <span className="text-white/40">Unassigned</span>}
-                        </td>
-                        <td className="py-3 text-white/70">{d.firmware}</td>
-                        <td className="py-3">
-                          <span className={`badge ${d.status === 'online' ? 'badge-green' : 'badge-amber'}`}>
-                            {d.status}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                              <div
-                                className={`h-full ${d.battery > 50 ? 'bg-neon-green' : d.battery > 20 ? 'bg-amber-400' : 'bg-neon-pink'}`}
-                                style={{ width: `${d.battery}%` }}
-                              />
-                            </div>
-                            <span className="font-mono text-xs">{d.battery}%</span>
+                  {filteredDevices.map((d, i) => (
+                    <motion.tr
+                      key={d.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.03 }}
+                      className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
+                    >
+                      <td className="py-3 font-mono text-xs">{d.serial}</td>
+                      <td className="py-3 font-mono text-xs text-white/60">{d.petId ?? '—'}</td>
+                      <td className="py-3 text-white/70">{d.firmware ?? '—'}</td>
+                      <td className="py-3">
+                        <span className={`badge ${d.status === 'online' ? 'badge-green' : 'badge-amber'}`}>
+                          {d.status}
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-12 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                            <div
+                              className={`h-full ${d.battery > 50 ? 'bg-neon-green' : d.battery > 20 ? 'bg-amber-400' : 'bg-neon-pink'}`}
+                              style={{ width: `${d.battery}%` }}
+                            />
                           </div>
-                        </td>
-                        <td className="py-3 text-white/50">{timeAgo(d.lastSync)}</td>
-                      </motion.tr>
-                    );
-                  })}
+                          <span className="font-mono text-xs">{d.battery}%</span>
+                        </div>
+                      </td>
+                      <td className="py-3 text-white/50">{timeAgo(d.lastSync)}</td>
+                    </motion.tr>
+                  ))}
+                  {filteredDevices.length === 0 && (
+                    <tr><td colSpan={6} className="py-8 text-center text-white/40">No devices found.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>

@@ -1,31 +1,63 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Edit3, Trash2, PawPrint, Heart, Calendar, Tag } from 'lucide-react';
+import { Plus, Edit3, Trash2, PawPrint, Heart, Calendar, Tag, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { DEMO_PETS } from '@/services/demoData';
+import { petApi } from '@/services/api';
 import type { Pet } from '@shared/types';
 
 export default function PetsPage() {
-  const [pets, setPets] = useState<Pet[]>(DEMO_PETS);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Pet | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSave = (pet: Pet) => {
-    if (pets.find((p) => p.id === pet.id)) {
-      setPets(pets.map((p) => (p.id === pet.id ? pet : p)));
-    } else {
-      setPets([...pets, pet]);
+  useEffect(() => {
+    (async () => {
+      try {
+        setPets(await petApi.list());
+      } catch (err: any) {
+        setLoadError(err.message ?? 'Could not load pets');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSave = async (draft: Omit<Pet, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => {
+    setSaving(true);
+    setFormError(null);
+    try {
+      if (editing) {
+        const updated = await petApi.update(editing.id, draft);
+        setPets((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
+      } else {
+        const created = await petApi.create(draft);
+        setPets((ps) => [...ps, created]);
+      }
+      setEditing(null);
+      setShowForm(false);
+    } catch (err: any) {
+      setFormError(err.message ?? 'Could not save pet');
+    } finally {
+      setSaving(false);
     }
-    setEditing(null);
-    setShowForm(false);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Remove this pet?')) {
-      setPets(pets.filter((p) => p.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm('Remove this pet?')) return;
+    const prev = pets;
+    setPets(pets.filter((p) => p.id !== id));
+    try {
+      await petApi.remove(id);
+    } catch (err: any) {
+      setPets(prev); // roll back on failure
+      alert(err.message ?? 'Could not delete pet');
     }
   };
 
@@ -40,6 +72,7 @@ export default function PetsPage() {
           variant="primary"
           onClick={() => {
             setEditing(null);
+            setFormError(null);
             setShowForm(true);
           }}
         >
@@ -48,79 +81,100 @@ export default function PetsPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {pets.map((pet, i) => (
-          <motion.div
-            key={pet.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-          >
-            <Card variant="holo" glow className="p-5 h-full flex flex-col">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-neon-cyan/20 to-neon-purple/20 border border-white/10 flex items-center justify-center text-3xl">
-                    {pet.species === 'dog' ? '🐕' : pet.species === 'cat' ? '🐈' : '🐾'}
+      {loading ? (
+        <div className="flex items-center gap-2 text-white/50 text-sm py-10 justify-center">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading pets…
+        </div>
+      ) : loadError ? (
+        <Card variant="holo" className="p-6 text-center text-neon-pink text-sm">{loadError}</Card>
+      ) : pets.length === 0 ? (
+        <Card variant="holo" className="p-10 text-center">
+          <PawPrint className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <div className="text-white/60">No pets yet — add your first one.</div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {pets.map((pet, i) => (
+            <motion.div
+              key={pet.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+            >
+              <Card variant="holo" glow className="p-5 h-full flex flex-col">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-neon-cyan/20 to-neon-purple/20 border border-white/10 flex items-center justify-center text-3xl">
+                      {pet.species === 'dog' ? '🐕' : pet.species === 'cat' ? '🐈' : '🐾'}
+                    </div>
+                    <div>
+                      <div className="font-display text-lg">{pet.name}</div>
+                      <div className="text-xs text-white/50">{pet.breed || pet.species}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-display text-lg">{pet.name}</div>
-                    <div className="text-xs text-white/50">{pet.breed}</div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => {
+                        setEditing(pet);
+                        setFormError(null);
+                        setShowForm(true);
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-neon-cyan transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(pet.id)}
+                      className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-neon-pink transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => {
-                      setEditing(pet);
-                      setShowForm(true);
-                    }}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-neon-cyan transition-colors"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(pet.id)}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-neon-pink transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
 
-              <div className="space-y-2 text-xs text-white/70 flex-1">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-3.5 h-3.5 text-white/40" />
-                  <span>{pet.age} years old</span>
+                <div className="space-y-2 text-xs text-white/70 flex-1">
+                  {pet.age !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5 text-white/40" />
+                      <span>{pet.age} years old</span>
+                    </div>
+                  )}
+                  {(pet.weight !== undefined || pet.color) && (
+                    <div className="flex items-center gap-2">
+                      <Heart className="w-3.5 h-3.5 text-white/40" />
+                      <span>{pet.weight !== undefined ? `${pet.weight} kg` : ''}{pet.weight !== undefined && pet.color ? ' • ' : ''}{pet.color ?? ''}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-3.5 h-3.5 text-white/40" />
+                    <span className="font-mono text-[10px]">{pet.id}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Heart className="w-3.5 h-3.5 text-white/40" />
-                  <span>{pet.weight} kg{pet.color ? ` • ${pet.color}` : ''}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Tag className="w-3.5 h-3.5 text-white/40" />
-                  <span className="font-mono text-[10px]">{pet.id}</span>
-                </div>
-              </div>
 
-              <Link
-                to={`/tracking/${pet.id}`}
-                className="mt-4 block text-center py-2 rounded-lg bg-white/5 hover:bg-neon-cyan/10 border border-white/10 hover:border-neon-cyan/50 text-sm transition-all"
-              >
-                <PawPrint className="w-4 h-4 inline mr-1.5" />
-                Track {pet.name}
-              </Link>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+                <Link
+                  to={`/tracking/${pet.id}`}
+                  className="mt-4 block text-center py-2 rounded-lg bg-white/5 hover:bg-neon-cyan/10 border border-white/10 hover:border-neon-cyan/50 text-sm transition-all"
+                >
+                  <PawPrint className="w-4 h-4 inline mr-1.5" />
+                  Track {pet.name}
+                </Link>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       <AnimatePresence>
         {showForm && (
           <PetFormModal
             pet={editing}
+            saving={saving}
+            error={formError}
             onSave={handleSave}
             onClose={() => {
               setShowForm(false);
               setEditing(null);
+              setFormError(null);
             }}
           />
         )}
@@ -129,7 +183,19 @@ export default function PetsPage() {
   );
 }
 
-function PetFormModal({ pet, onSave, onClose }: { pet: Pet | null; onSave: (p: Pet) => void; onClose: () => void }) {
+function PetFormModal({
+  pet,
+  saving,
+  error,
+  onSave,
+  onClose,
+}: {
+  pet: Pet | null;
+  saving: boolean;
+  error: string | null;
+  onSave: (p: Omit<Pet, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => void;
+  onClose: () => void;
+}) {
   const [name, setName] = useState(pet?.name ?? '');
   const [species, setSpecies] = useState<Pet['species']>(pet?.species ?? 'dog');
   const [breed, setBreed] = useState(pet?.breed ?? '');
@@ -138,19 +204,15 @@ function PetFormModal({ pet, onSave, onClose }: { pet: Pet | null; onSave: (p: P
   const [color, setColor] = useState(pet?.color ?? '');
 
   const submit = () => {
-    if (!name) return;
+    if (!name.trim()) return;
     onSave({
-      id: pet?.id ?? `pet-${Date.now()}`,
-      ownerId: pet?.ownerId ?? 'demo-user',
-      name,
+      name: name.trim(),
       species,
       breed: breed || undefined,
       age: age ? parseInt(age) : undefined,
       weight: weight ? parseFloat(weight) : undefined,
       color: color || undefined,
       imageUrl: pet?.imageUrl,
-      createdAt: pet?.createdAt ?? Date.now(),
-      updatedAt: Date.now(),
     });
   };
 
@@ -171,6 +233,7 @@ function PetFormModal({ pet, onSave, onClose }: { pet: Pet | null; onSave: (p: P
       >
         <Card variant="holo" glow className="p-6">
           <div className="font-display text-xl neon-text mb-4">{pet ? 'Edit Pet' : 'Add Pet'}</div>
+          {error && <div className="text-xs text-neon-pink mb-3">{error}</div>}
           <div className="space-y-3">
             <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Luna" />
             <div>
@@ -196,7 +259,9 @@ function PetFormModal({ pet, onSave, onClose }: { pet: Pet | null; onSave: (p: P
           </div>
           <div className="flex gap-2 mt-6">
             <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" className="flex-1" onClick={submit}>{pet ? 'Save' : 'Add Pet'}</Button>
+            <Button variant="primary" className="flex-1" onClick={submit} disabled={saving}>
+              {saving ? 'Saving…' : pet ? 'Save' : 'Add Pet'}
+            </Button>
           </div>
         </Card>
       </motion.div>

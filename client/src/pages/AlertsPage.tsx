@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BellRing, AlertTriangle, Shield, MapPin, Battery, Filter, Check } from 'lucide-react';
+import { BellRing, AlertTriangle, Shield, MapPin, Battery, Filter, Check, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { DEMO_ALERTS } from '@/services/demoData';
+import { alertApi } from '@/services/api';
 import { timeAgo, formatDate } from '@/lib/utils';
 import type { Alert } from '@shared/types';
 
@@ -41,8 +41,22 @@ const severityBadge = (s: Alert['severity']) => {
 };
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<Alert[]>(DEMO_ALERTS);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread' | Alert['severity']>('all');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setAlerts(await alertApi.list({ limit: 200 }));
+      } catch (err: any) {
+        setLoadError(err.message ?? 'Could not load alerts');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const filtered = useMemo(() => {
     let result = alerts;
@@ -55,12 +69,22 @@ export default function AlertsPage() {
     );
   }, [alerts, filter]);
 
-  const markRead = (id: string) => {
-    setAlerts(alerts.map((a) => (a.id === id ? { ...a, read: true } : a)));
+  const markRead = async (id: string) => {
+    setAlerts((as) => as.map((a) => (a.id === id ? { ...a, read: true } : a)));
+    try {
+      await alertApi.markRead(id);
+    } catch {
+      // best-effort — leave the optimistic update in place
+    }
   };
 
-  const markAllRead = () => {
-    setAlerts(alerts.map((a) => ({ ...a, read: true })));
+  const markAllRead = async () => {
+    setAlerts((as) => as.map((a) => ({ ...a, read: true })));
+    try {
+      await alertApi.markAllRead();
+    } catch {
+      // best-effort
+    }
   };
 
   const counts = {
@@ -114,7 +138,13 @@ export default function AlertsPage() {
 
       {/* Alerts list */}
       <div className="space-y-2">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center gap-2 text-white/50 text-sm py-10 justify-center">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading alerts…
+          </div>
+        ) : loadError ? (
+          <Card variant="holo" className="p-6 text-center text-neon-pink text-sm">{loadError}</Card>
+        ) : filtered.length === 0 ? (
           <Card variant="holo" className="p-10 text-center">
             <BellRing className="w-10 h-10 text-white/20 mx-auto mb-3" />
             <div className="text-white/60">No alerts to show.</div>

@@ -1,115 +1,147 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Plus, Trash2, Bell, Shield, ChevronDown, History } from 'lucide-react';
+import { MapPin, Plus, Trash2, Shield, ChevronDown, History, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import TrackingMap from '@/components/map/TrackingMap';
-import { DEMO_PETS, DEMO_ALERTS, generateGpsHistory } from '@/services/demoData';
+import { petApi, geofenceApi, alertApi, gpsApi } from '@/services/api';
+import { useGpsStream } from '@/services/socket';
 import { haversine } from '@/lib/utils';
-
-// -----------------------------------------------------------------------
-// This page runs in the same "demo mode" as the rest of the app (see
-// DashboardPage / LiveTrackingPage — none of them call the real API yet).
-// Zones live in local component state.
-//
-// The backend is already fully built for this feature:
-//   shared/types.ts            -> Geofence type
-//   server/src/routes/geofences.ts   -> CRUD endpoints
-//   server/src/services/geofenceService.ts -> enter/exit breach detection
-//   client/src/services/api.ts -> geofenceApi wrapper (added)
-// To go live: replace the local `zones` state below with
-// `geofenceApi.list()/.create()/.update()/.remove()` calls.
-// -----------------------------------------------------------------------
-
-interface Zone {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  radius: number; // meters
-  isSafeZone: boolean;
-  notifyDashboard: boolean;
-  notifyEmail: boolean;
-  notifyPush: boolean;
-}
-
-const DEFAULT_ZONES: Zone[] = [
-  { id: 'z1', name: 'Home', lat: 31.5204, lng: 74.3587, radius: 150, isSafeZone: true, notifyDashboard: true, notifyEmail: true, notifyPush: true },
-  { id: 'z2', name: 'Park', lat: 31.5240, lng: 74.3620, radius: 300, isSafeZone: true, notifyDashboard: true, notifyEmail: false, notifyPush: true },
-];
+import type { Pet, Geofence, Alert, GpsLog } from '@shared/types';
 
 export default function GeofencingPage() {
-  const [selectedPetId, setSelectedPetId] = useState(DEMO_PETS[0].id);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [loadingPets, setLoadingPets] = useState(true);
+  const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [petMenuOpen, setPetMenuOpen] = useState(false);
-  const [zones, setZones] = useState<Zone[]>(DEFAULT_ZONES);
-  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(zones[0]?.id ?? null);
+
+  const [zones, setZones] = useState<Geofence[]>([]);
+  const [loadingZones, setLoadingZones] = useState(false);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  const [savingZone, setSavingZone] = useState(false);
 
-  const selectedPet = DEMO_PETS.find((p) => p.id === selectedPetId)!;
+  const [history, setHistory] = useState<GpsLog[]>([]);
+  const [zoneHistory, setZoneHistory] = useState<Alert[]>([]);
 
-  // Simulated live position for the selected pet (same pattern as other pages)
-  const history = useMemo(
-    () => generateGpsHistory(selectedPet.id, `device-${selectedPet.id}`, 60),
-    [selectedPet.id]
-  );
+  const selectedPet = pets.find((p) => p.id === selectedPetId);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await petApi.list();
+        setPets(list);
+        if (list.length) setSelectedPetId(list[0].id);
+      } finally {
+        setLoadingPets(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPetId) return;
+    setLoadingZones(true);
+    (async () => {
+      try {
+        const [zoneList, history_, alerts] = await Promise.all([
+          geofenceApi.list(selectedPetId),
+          gpsApi.history(selectedPetId, { limit: 300 }),
+          alertApi.list({ limit: 100 }),
+        ]);
+        setZones(zoneList);
+        setSelectedZoneId(zoneList[0]?.id ?? null);
+        setHistory(history_);
+        setZoneHistory(
+          alerts.filter(
+            (a) => a.petId === selectedPetId && (a.type === 'geofence_enter' || a.type === 'geofence_exit')
+          )
+        );
+      } finally {
+        setLoadingZones(false);
+      }
+    })();
+  }, [selectedPetId]);
+
+  useGpsStream(selectedPetId || undefined, (log) => {
+    setHistory((h) => [...h, log].slice(-500));
+  });
+
   const current = history[history.length - 1];
-
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
 
-  // Per-zone live status: distance from center + inside/outside
   const zoneStatus = useMemo(
     () =>
       zones.map((z) => {
-        const distance = haversine(current, { lat: z.lat, lng: z.lng });
+        if (!current || !z.center || z.radius === undefined) {
+          return { ...z, distance: null as number | null, inside: false };
+        }
+        const distance = haversine(current, z.center);
         return { ...z, distance, inside: distance <= z.radius };
       }),
     [zones, current]
   );
 
-  const zoneHistory = DEMO_ALERTS.filter(
-    (a) => a.type === 'geofence_enter' || a.type === 'geofence_exit'
-  );
-
-  // Rough compliance stat: % of the simulated history inside the selected zone
   const compliance = useMemo(() => {
-    if (!selectedZone) return null;
-    const insideCount = history.filter((p) => haversine(p, { lat: selectedZone.lat, lng: selectedZone.lng }) <= selectedZone.radius).length;
+    if (!selectedZone || !selectedZone.center || selectedZone.radius === undefined || history.length === 0) return null;
+    const insideCount = history.filter((p) => haversine(p, selectedZone.center!) <= selectedZone.radius!).length;
     return Math.round((insideCount / history.length) * 100);
   }, [history, selectedZone]);
 
-  const addZoneAt = (pos: { lat: number; lng: number }) => {
-    const id = `z-${Date.now()}`;
-    const zone: Zone = {
-      id,
-      name: `New Zone ${zones.length + 1}`,
-      lat: pos.lat,
-      lng: pos.lng,
-      radius: 200,
-      isSafeZone: true,
-      notifyDashboard: true,
-      notifyEmail: false,
-      notifyPush: true,
-    };
-    setZones((z) => [...z, zone]);
-    setSelectedZoneId(id);
-    setPlacing(false);
+  const addZoneAt = async (pos: { lat: number; lng: number }) => {
+    if (!selectedPetId) return;
+    setSavingZone(true);
+    try {
+      const zone = await geofenceApi.create({
+        name: `Zone ${zones.length + 1}`,
+        petId: selectedPetId,
+        center: pos,
+        radius: 200,
+        isSafeZone: true,
+        active: true,
+      });
+      setZones((z) => [...z, zone]);
+      setSelectedZoneId(zone.id);
+    } finally {
+      setSavingZone(false);
+      setPlacing(false);
+    }
   };
 
-  const updateZone = (id: string, patch: Partial<Zone>) => {
-    setZones((zs) => zs.map((z) => (z.id === id ? { ...z, ...patch } : z)));
+  const updateZone = async (id: string, patch: Partial<{ name: string; radius: number; isSafeZone: boolean; active: boolean }>) => {
+    setZones((zs) => zs.map((z) => (z.id === id ? { ...z, ...patch } : z))); // optimistic
+    try {
+      await geofenceApi.update(id, patch);
+    } catch {
+      // best-effort — UI already updated optimistically
+    }
   };
 
-  const deleteZone = (id: string) => {
+  const deleteZone = async (id: string) => {
     setZones((zs) => zs.filter((z) => z.id !== id));
     if (selectedZoneId === id) setSelectedZoneId(null);
+    try {
+      await geofenceApi.remove(id);
+    } catch {
+      // best-effort
+    }
   };
 
-  useEffect(() => {
-    if (!zones.find((z) => z.id === selectedZoneId)) {
-      setSelectedZoneId(zones[0]?.id ?? null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zones]);
+  if (loadingPets) {
+    return (
+      <div className="flex items-center gap-2 text-white/50 text-sm py-20 justify-center">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  if (!selectedPet) {
+    return (
+      <Card variant="holo" className="p-10 text-center">
+        <Shield className="w-10 h-10 text-white/20 mx-auto mb-3" />
+        <div className="text-white/60">Add a pet first to set up geofencing.</div>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -135,7 +167,7 @@ export default function GeofencingPage() {
               animate={{ opacity: 1, y: 0 }}
               className="absolute right-0 mt-2 w-56 rounded-lg bg-navy-900 border border-white/10 shadow-glow z-50 overflow-hidden"
             >
-              {DEMO_PETS.map((p) => (
+              {pets.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => {
@@ -155,6 +187,12 @@ export default function GeofencingPage() {
         </div>
       </div>
 
+      {!current && !loadingZones && (
+        <Card variant="holo" className="p-4 text-sm text-white/60">
+          No location data yet for {selectedPet.name} — the map will center on a default location until your tracker sends a fix.
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Map */}
         <Card variant="holo" className="lg:col-span-3 p-0 overflow-hidden">
@@ -167,6 +205,7 @@ export default function GeofencingPage() {
               variant={placing ? 'primary' : 'secondary'}
               size="sm"
               onClick={() => setPlacing((p) => !p)}
+              disabled={savingZone}
             >
               <Plus className="w-4 h-4 mr-1.5" />
               {placing ? 'Click map to place…' : 'Add safe zone'}
@@ -177,8 +216,10 @@ export default function GeofencingPage() {
               history={history}
               prediction={null}
               followLive={false}
-              center={[current.lat, current.lng]}
-              geofences={zones.map((z) => ({ center: { lat: z.lat, lng: z.lng }, radius: z.radius, isSafeZone: z.isSafeZone, name: z.name }))}
+              center={current ? [current.lat, current.lng] : undefined}
+              geofences={zones
+                .filter((z) => z.center && z.radius !== undefined)
+                .map((z) => ({ center: z.center!, radius: z.radius!, isSafeZone: z.isSafeZone, name: z.name }))}
               onMapClick={placing ? addZoneAt : undefined}
             />
           </div>
@@ -191,30 +232,38 @@ export default function GeofencingPage() {
               <MapPin className="w-4 h-4 text-neon-cyan" />
               <div className="font-display text-sm">Safe zones ({zones.length})</div>
             </div>
-            <div className="space-y-2">
-              {zoneStatus.map((z) => (
-                <button
-                  key={z.id}
-                  onClick={() => setSelectedZoneId(z.id)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    z.id === selectedZoneId ? 'border-neon-cyan/50 bg-white/[0.04]' : 'border-white/5 bg-white/[0.02] hover:bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">{z.name}</span>
-                    <span className={`badge ${z.inside ? 'badge-green' : 'badge-pink'}`}>
-                      {z.inside ? 'INSIDE' : 'OUTSIDE'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-white/40 mt-1 font-mono">
-                    {Math.round(z.distance)}m from center · radius {z.radius}m
-                  </div>
-                </button>
-              ))}
-              {zones.length === 0 && (
-                <div className="text-xs text-white/40 text-center py-4">No zones yet — click "Add safe zone".</div>
-              )}
-            </div>
+            {loadingZones ? (
+              <div className="text-xs text-white/40 text-center py-4 flex items-center justify-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading zones…
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {zoneStatus.map((z) => (
+                  <button
+                    key={z.id}
+                    onClick={() => setSelectedZoneId(z.id)}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      z.id === selectedZoneId ? 'border-neon-cyan/50 bg-white/[0.04]' : 'border-white/5 bg-white/[0.02] hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">{z.name}</span>
+                      {z.distance !== null && (
+                        <span className={`badge ${z.inside ? 'badge-green' : 'badge-pink'}`}>
+                          {z.inside ? 'INSIDE' : 'OUTSIDE'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-white/40 mt-1 font-mono">
+                      {z.distance !== null ? `${Math.round(z.distance)}m from center · ` : ''}radius {z.radius}m
+                    </div>
+                  </button>
+                ))}
+                {zones.length === 0 && (
+                  <div className="text-xs text-white/40 text-center py-4">No zones yet — click "Add safe zone".</div>
+                )}
+              </div>
+            )}
           </Card>
 
           {selectedZone && (
@@ -258,26 +307,6 @@ export default function GeofencingPage() {
                     className="accent-neon-cyan"
                   />
                 </label>
-
-                <div className="pt-3 border-t border-white/10">
-                  <div className="flex items-center gap-2 mb-2 text-xs text-white/60">
-                    <Bell className="w-3.5 h-3.5" /> Notification preferences
-                  </div>
-                  <div className="space-y-1.5 text-xs">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-white/60">Dashboard</span>
-                      <input type="checkbox" checked={selectedZone.notifyDashboard} onChange={(e) => updateZone(selectedZone.id, { notifyDashboard: e.target.checked })} className="accent-neon-cyan" />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-white/60">Email</span>
-                      <input type="checkbox" checked={selectedZone.notifyEmail} onChange={(e) => updateZone(selectedZone.id, { notifyEmail: e.target.checked })} className="accent-neon-cyan" />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-white/60">Push</span>
-                      <input type="checkbox" checked={selectedZone.notifyPush} onChange={(e) => updateZone(selectedZone.id, { notifyPush: e.target.checked })} className="accent-neon-cyan" />
-                    </label>
-                  </div>
-                </div>
 
                 {compliance !== null && (
                   <div className="pt-3 border-t border-white/10 flex justify-between text-xs">
