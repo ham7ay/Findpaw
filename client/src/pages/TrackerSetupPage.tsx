@@ -141,6 +141,15 @@ export default function TrackerSetupPage() {
       at: pos.timestamp,
     });
 
+    // A phone's first few GPS fixes are often 50–500m off before the receiver
+    // locks properly. Uploading those poisons the trail (and the AI predictor's
+    // speed estimate, which extrapolates in a straight line). Skip anything
+    // with accuracy worse than 75m rather than sending it as a real point.
+    if (accuracy !== null && accuracy > 75) {
+      setGeoError(`Waiting for a better GPS fix (currently ±${Math.round(accuracy)}m)…`);
+      return;
+    }
+
     // Throttle uploads to at most once every 5s even if the browser fires faster
     const now = Date.now();
     if (now - lastSentRef.current < 5000) return;

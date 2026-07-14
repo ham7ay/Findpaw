@@ -175,13 +175,18 @@ export function predictTrajectory(input: PredictionInput): PredictionResult {
   const [ay, by] = linearRegression(ts, ys);
 
   // ---- Recent-weighted velocity (smoother near-term) ----
+  // A single noisy fix (common on a phone's first GPS lock) can register as
+  // a huge instantaneous speed, which would otherwise get extrapolated in a
+  // straight line for the whole horizon. Clip individual speed samples to a
+  // plausible ceiling before they feed into the EWMA / dead-reckoning below.
+  const MAX_PLAUSIBLE_SPEED = 15; // m/s (~54 km/h) — generous for a running dog/livestock
   const speeds: number[] = [];
   const bearings: number[] = [];
   for (let i = 1; i < logs.length; i++) {
     const dt = (logs[i].timestamp - logs[i - 1].timestamp) / 1000;
     if (dt <= 0) continue;
     const d = haversine(logs[i - 1], logs[i]);
-    speeds.push(d / dt);
+    speeds.push(Math.min(d / dt, MAX_PLAUSIBLE_SPEED));
     bearings.push(bearing(logs[i - 1], logs[i]));
   }
   const avgSpeed = ewma(speeds);
