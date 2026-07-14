@@ -58,7 +58,12 @@ export default function LiveTrackingPage() {
     setLoadingHistory(true);
     setHistoryError(null);
     try {
-      const data = await gpsApi.history(pet.id, { limit: 300 });
+      // Start of today (local time) — the backend evenly downsamples across
+      // this whole window so the trail isn't truncated to just the tail end
+      // on days with lots of pings.
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const data = await gpsApi.history(pet.id, { since: startOfToday.getTime(), limit: 500 });
       setHistory(data);
     } catch (err: any) {
       setHistoryError(err.message ?? 'Could not load GPS history');

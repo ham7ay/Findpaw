@@ -168,14 +168,39 @@ router.get('/:petId', requireAuth, async (req: AuthedRequest, res) => {
     throw new ApiError(404, 'Pet not found');
   }
 
-  let q = db().collection('gps_logs')
-    .where('petId', '==', petId)
-    .orderBy('timestamp', 'desc')
-    .limit(limit);
-  if (since) q = q.where('timestamp', '>=', since) as any;
+  let data: any[];
 
-  const snap = await q.get();
-  const data = snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse();
+  if (since) {
+    // Bounded range (e.g. "show me today") — fetch ascending so we see the
+    // *start* of the window, up to a generous hard cap, then evenly
+    // downsample to `limit` points so the trail spans the whole range
+    // instead of being truncated to just the most recent points.
+    const HARD_CAP = 5000;
+    const snap = await db().collection('gps_logs')
+      .where('petId', '==', petId)
+      .where('timestamp', '>=', since)
+      .orderBy('timestamp', 'asc')
+      .limit(HARD_CAP)
+      .get();
+    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    if (all.length <= limit) {
+      data = all;
+    } else {
+      // Evenly-spaced sample that always includes the first and last point.
+      const step = (all.length - 1) / (limit - 1);
+      data = Array.from({ length: limit }, (_, i) => all[Math.round(i * step)]);
+    }
+  } else {
+    // No range given — "recent activity" view: most recent N points.
+    const snap = await db().collection('gps_logs')
+      .where('petId', '==', petId)
+      .orderBy('timestamp', 'desc')
+      .limit(limit)
+      .get();
+    data = snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse();
+  }
+
   res.json({ success: true, data });
 });
 
