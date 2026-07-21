@@ -22,9 +22,9 @@ const navItems = [
   { to: '/pets',       label: 'My Pets',       icon: PawPrint },
   { to: '/tracking',   label: 'Live Tracking', icon: MapIcon },
   { to: '/tracker-setup', label: 'GPS Tracker', icon: Radio },
+  { to: '/geofencing', label: 'Geofencing',    icon: MapPinned },
   { to: '/alerts',     label: 'Alerts',        icon: Bell },
   { to: '/analytics',  label: 'Analytics',     icon: BarChart3 },
-  { to: '/geofencing', label: 'Geofencing',    icon: MapPinned },
   { to: '/admin',      label: 'Admin',         icon: Shield },
 ];
 
