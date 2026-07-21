@@ -16,8 +16,15 @@ export default function LoadingScreen() {
             animate={{ scale: [1, 1.4, 1], opacity: [0.8, 0, 0.8] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeOut', delay: 0.4 }}
           />
-          <div className="absolute inset-4 rounded-full flex items-center justify-center">
-            <img src="/logo.png" alt="Find🐾" className="w-full h-full object-contain drop-shadow-[0_0_12px_rgba(6,182,212,0.5)]" />
+          <div className="absolute inset-4 rounded-full flex items-center justify-center" style={{ perspective: '400px' }}>
+            <motion.img
+              src="/logo.png"
+              alt="Find🐾"
+              className="w-full h-full object-contain drop-shadow-[0_0_12px_rgba(6,182,212,0.5)]"
+              animate={{ rotateY: 360 }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+              style={{ transformStyle: 'preserve-3d' }}
+            />
           </div>
         </div>
         <div className="text-center">

@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { cn } from '../../lib/utils';
 
 interface LogoProps {
@@ -16,11 +17,16 @@ export default function Logo({ size = 'md', showText = true, className }: LogoPr
   const s = sizes[size];
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
-      <img
-        src="/logo.png"
-        alt="Find🐾 logo"
-        className={cn('object-contain drop-shadow-[0_0_4px_rgba(6,182,212,0.3)]', s.box)}
-      />
+      <div style={{ perspective: '400px' }}>
+        <motion.img
+          src="/logo.png"
+          alt="Find🐾 logo"
+          className={cn('object-contain drop-shadow-[0_0_4px_rgba(6,182,212,0.3)]', s.box)}
+          animate={{ rotateY: 360 }}
+          transition={{ duration: 3.5, repeat: Infinity, ease: 'linear' }}
+          style={{ transformStyle: 'preserve-3d' }}
+        />
+      </div>
       {showText && (
         <span className={cn('font-display font-bold tracking-wider neon-text', s.text)}>
           Find🐾
