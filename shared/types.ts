@@ -68,7 +68,9 @@ export type AlertType =
   | 'inactive'
   | 'abnormal_movement'
   | 'escape'
-  | 'speed_anomaly';
+  | 'speed_anomaly'
+  | 'tracking_started'
+  | 'tracking_stopped';
 
 export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 

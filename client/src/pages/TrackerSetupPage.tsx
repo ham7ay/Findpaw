@@ -40,6 +40,11 @@ export default function TrackerSetupPage() {
   const watchIdRef = useRef<number | null>(null);
   const lastSentRef = useRef<number>(0);
   const wakeLockRef = useRef<any>(null);
+  const trackingRef = useRef(false);
+  const deviceRef = useRef<StoredDevice | null>(null);
+
+  useEffect(() => { trackingRef.current = tracking; }, [tracking]);
+  useEffect(() => { deviceRef.current = device; }, [device]);
 
   // Load stored device registration + pet list on mount
   useEffect(() => {
@@ -69,6 +74,15 @@ export default function TrackerSetupPage() {
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       wakeLockRef.current?.release?.().catch(() => {});
+      // Best-effort "stopped" notification if the tab closes while still tracking —
+      // sendBeacon survives page unload where a normal fetch would get cancelled.
+      if (trackingRef.current && deviceRef.current) {
+        const body = new Blob([JSON.stringify({ event: 'stopped' })], { type: 'application/json' });
+        navigator.sendBeacon?.(
+          `${BASE}/api/gps/tracking-event?deviceId=${deviceRef.current.deviceId}&deviceKey=${deviceRef.current.deviceKey}`,
+          body
+        );
+      }
     };
   }, []);
 
@@ -185,6 +199,23 @@ export default function TrackerSetupPage() {
     }
   };
 
+  const notifyTrackingEvent = async (event: 'started' | 'stopped') => {
+    if (!device) return;
+    try {
+      await fetch(`${BASE}/api/gps/tracking-event`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Id': device.deviceId,
+          'X-Device-Key': device.deviceKey,
+        },
+        body: JSON.stringify({ event }),
+      });
+    } catch {
+      // best-effort — don't block tracking on this
+    }
+  };
+
   const startTracking = async () => {
     if (!device) return;
     if (!window.isSecureContext) {
@@ -209,6 +240,7 @@ export default function TrackerSetupPage() {
     );
     setTracking(true);
     setGeoError(null);
+    notifyTrackingEvent('started');
   };
 
   const stopTracking = () => {
@@ -218,6 +250,7 @@ export default function TrackerSetupPage() {
     }
     wakeLockRef.current?.release?.().catch(() => {});
     setTracking(false);
+    if (tracking) notifyTrackingEvent('stopped');
   };
 
   return (

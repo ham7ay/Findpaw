@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BellRing, AlertTriangle, Shield, MapPin, Battery, Filter, Check, Loader2 } from 'lucide-react';
+import { BellRing, AlertTriangle, Shield, MapPin, Battery, Filter, Check, Loader2, Play, Square } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { alertApi } from '@/services/api';
@@ -18,6 +18,8 @@ const typeIcon = (t: Alert['type']) => {
     case 'escape': return AlertTriangle;
     case 'low_battery': return Battery;
     case 'inactive': return MapPin;
+    case 'tracking_started': return Play;
+    case 'tracking_stopped': return Square;
     default: return BellRing;
   }
 };

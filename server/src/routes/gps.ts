@@ -108,6 +108,47 @@ router.post('/upload', requireDevice, async (req: DeviceRequest, res) => {
 });
 
 /**
+ * POST /api/gps/tracking-event
+ * Device-authenticated. Records a "tracking started/stopped" alert —
+ * used by the browser-based tracker page when the user hits Start/Stop.
+ * Body: { event: 'started' | 'stopped' }
+ */
+const trackingEventSchema = z.object({
+  event: z.enum(['started', 'stopped']),
+});
+
+router.post('/tracking-event', requireDevice, async (req: DeviceRequest, res) => {
+  const { event } = trackingEventSchema.parse(req.body);
+  const device = req.device!;
+
+  const alert = {
+    ownerId: device.ownerId,
+    petId: device.petId,
+    deviceId: device.id,
+    type: event === 'started' ? 'tracking_started' : 'tracking_stopped',
+    severity: 'low' as const,
+    title: event === 'started' ? 'Tracking started' : 'Tracking stopped',
+    message: event === 'started'
+      ? 'GPS tracking has started for this pet.'
+      : 'GPS tracking has stopped for this pet.',
+    read: false,
+    metadata: {},
+    createdAt: Date.now(),
+  };
+
+  if (!firebaseReady()) {
+    const newAlert = { id: `alert-${Date.now()}`, ...alert };
+    if (device.petId) emitAlert(device.petId, newAlert);
+    return res.status(201).json({ success: true, data: newAlert });
+  }
+
+  const ref = await db().collection('alerts').add(alert);
+  const newAlert = { id: ref.id, ...alert };
+  if (device.petId) emitAlert(device.petId, newAlert);
+  res.status(201).json({ success: true, data: newAlert });
+});
+
+/**
  * POST /api/gps/batch — bulk upload from intermittent devices
  */
 router.post('/batch', requireDevice, async (req: DeviceRequest, res) => {

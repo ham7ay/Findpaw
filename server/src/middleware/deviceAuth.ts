@@ -24,8 +24,12 @@ export function hashDeviceKey(rawKey: string): string {
  * The hashed key is compared against the stored `apiKey` field on the device doc.
  */
 export async function requireDevice(req: DeviceRequest, res: Response, next: NextFunction) {
-  const deviceId = req.headers['x-device-id'] as string | undefined;
-  const deviceKey = req.headers['x-device-key'] as string | undefined;
+  // Headers are the normal path. Query params are a fallback used only by
+  // navigator.sendBeacon() (tab-close "stopped" notification), which can't
+  // set custom headers. Query params are logged more readily than headers,
+  // so this fallback is only used for that one low-sensitivity beacon call.
+  const deviceId = (req.headers['x-device-id'] as string | undefined) ?? (req.query.deviceId as string | undefined);
+  const deviceKey = (req.headers['x-device-key'] as string | undefined) ?? (req.query.deviceKey as string | undefined);
 
   if (!deviceId || !deviceKey) {
     return res.status(401).json({ success: false, error: 'Missing X-Device-Id or X-Device-Key' });

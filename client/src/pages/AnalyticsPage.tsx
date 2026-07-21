@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { TrendingUp, Activity, Clock, Compass, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { petApi, gpsApi, geofenceApi } from '@/services/api';
+import { petApi, gpsApi } from '@/services/api';
 import { haversine } from '@/lib/utils';
-import type { Pet, GpsLog, Geofence } from '@shared/types';
+import type { Pet, GpsLog } from '@shared/types';
 
 const COLORS = {
   cyan: '#06b6d4',
@@ -26,7 +26,6 @@ export default function AnalyticsPage() {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
 
   const [history, setHistory] = useState<GpsLog[]>([]);
-  const [zones, setZones] = useState<Geofence[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,12 +48,8 @@ export default function AnalyticsPage() {
     const since = Date.now() - days * 24 * 60 * 60 * 1000;
     (async () => {
       try {
-        const [logs, zoneList] = await Promise.all([
-          gpsApi.history(selectedPetId, { since, limit: 1000 }),
-          geofenceApi.list(selectedPetId),
-        ]);
+        const logs = await gpsApi.history(selectedPetId, { since, limit: 1000 });
         setHistory([...logs].sort((a, b) => a.timestamp - b.timestamp));
-        setZones(zoneList);
       } finally {
         setLoading(false);
       }
@@ -112,25 +107,13 @@ export default function AnalyticsPage() {
       activity: Math.round((c / maxHourCount) * 100),
     }));
 
-    // Zone visits — classify each point against real geofences, else "Unknown"
-    const zoneCounts = new Map<string, number>();
-    zones.forEach((z) => zoneCounts.set(z.name, 0));
-    let unknownCount = 0;
-    history.forEach((p) => {
-      const match = zones.find((z) => z.center && z.radius !== undefined && haversine(p, z.center) <= z.radius);
-      if (match) zoneCounts.set(match.name, (zoneCounts.get(match.name) ?? 0) + 1);
-      else unknownCount++;
-    });
-    const zoneStats = Array.from(zoneCounts.entries()).map(([zone, visits]) => ({ zone, visits }));
-    if (unknownCount > 0 || zoneStats.length === 0) zoneStats.push({ zone: 'Unknown', visits: unknownCount });
-
     const totalDistance = daily.reduce((s, d) => s + d.distance, 0);
     const speedsAll = history.map((p) => p.speed * 3.6).filter((s) => s > 0);
     const avgSpeed = speedsAll.length ? speedsAll.reduce((s, v) => s + v, 0) / speedsAll.length : 0;
     const peakSpeed = speedsAll.length ? Math.max(...speedsAll) : 0;
 
-    return { daily, hourly, zones: zoneStats, totalDistance, totalActive, avgSpeed, peakSpeed };
-  }, [history, zones, timeRange]);
+    return { daily, hourly, totalDistance, totalActive, avgSpeed, peakSpeed };
+  }, [history, timeRange]);
 
   const tooltipStyle = {
     backgroundColor: 'rgba(8, 13, 28, 0.95)',
@@ -226,19 +209,6 @@ export default function AnalyticsPage() {
                   <Tooltip contentStyle={tooltipStyle} />
                   <Line type="monotone" dataKey="activity" stroke={COLORS.green} strokeWidth={2} dot={false} />
                 </LineChart>
-              </ResponsiveContainer>
-            </Card>
-
-            <Card variant="holo" className="p-5 lg:col-span-2">
-              <div className="font-display text-sm mb-4">Zone visits</div>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={data.zones} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis type="number" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-                  <YAxis dataKey="zone" type="category" stroke="rgba(255,255,255,0.4)" fontSize={11} width={70} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="visits" fill={COLORS.pink} radius={[0, 4, 4, 0]} />
-                </BarChart>
               </ResponsiveContainer>
             </Card>
           </div>
