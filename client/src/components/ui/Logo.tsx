@@ -16,16 +16,11 @@ export default function Logo({ size = 'md', showText = true, className }: LogoPr
   const s = sizes[size];
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
-      <div
-        className={cn(
-          'relative rounded-xl bg-gradient-to-br from-neon-cyan to-neon-purple',
-          'flex items-center justify-center shadow-neon-cyan',
-          s.box
-        )}
-      >
-        <span className={s.emoji}>🐾</span>
-        <div className="absolute inset-0 rounded-xl ring-1 ring-white/20 pointer-events-none" />
-      </div>
+      <img
+        src="/logo.png"
+        alt="Find🐾 logo"
+        className={cn('object-contain drop-shadow-[0_0_10px_rgba(6,182,212,0.35)]', s.box)}
+      />
       {showText && (
         <span className={cn('font-display font-bold tracking-wider neon-text', s.text)}>
           Find🐾
